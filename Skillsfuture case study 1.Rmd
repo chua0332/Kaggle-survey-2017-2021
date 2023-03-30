@@ -1,0 +1,635 @@
+---
+title: "Skillsfuture case study 1"
+author: "Eugene Chua"
+date: "2023-03-29"
+output: 
+  html_document:
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(broom)
+library(lubridate)
+library(knitr)
+library(plotly)
+
+opts_knit$set(root.dir="/Users/eugenechua/Downloads/skillsfuture_interview")
+```
+
+Let us read in the dataset and do some quick **EDA** analysis especially on the demography side of things.
+
+## EDA - Exploratory Analysis
+
+```{r, message=FALSE,warning=FALSE}
+
+survey_data<-read.csv("kaggle_survey_2017_2021.csv",skip=1)
+
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+#Looking at age categories breakdown
+survey_data %>%
+  group_by(What.is.your.age....years..) %>%
+  summarize(Counts=n()) %>%
+  mutate(proportions=Counts/sum(Counts)) %>%
+  arrange(desc(Counts))
+```
+
+It is clear that this kaggle survey is geared towards the younger segments.
+
+
+```{r, message=FALSE, warning=FALSE}
+#Cleaning up a little of the education level data
+survey_data<-survey_data %>%
+  mutate(What.is.the.highest.level.of.formal.education.that.you.have.attained.or.plan.to.attain.within.the.next.2.years.=recode(What.is.the.highest.level.of.formal.education.that.you.have.attained.or.plan.to.attain.within.the.next.2.years.,                                                                                                            "Masterâ€™s degree" = "Master's degree", "Bachelorâ€™s degree" = "Bachelor's degree"))
+
+
+#Looking at education level breakdown
+education_info<-survey_data %>%
+  group_by(What.is.the.highest.level.of.formal.education.that.you.have.attained.or.plan.to.attain.within.the.next.2.years.) %>%
+  summarize(Counts=n()) %>%
+  mutate(proportions=Counts/sum(Counts)) %>%
+  arrange(desc(Counts)) %>%
+  as.data.frame()
+
+colnames(education_info)<-c("Highest_Education","Counts","% Proportions")
+
+education_info
+
+```
+
+This is also a highly educated group given that more than **50%** have postgraduate education of some sorts.
+
+```{r, message=FALSE, warning=FALSE}
+
+#Cleaning up a little for the gender level data
+survey_data<-survey_data %>%
+  mutate(What.is.your.gender....Selected.Choice=recode(What.is.your.gender....Selected.Choice,
+                                                       "Man" = "Male", "Woman" = "Female"))
+
+#Looking at gender level breakdown
+survey_data %>%
+  group_by(What.is.your.gender....Selected.Choice) %>%
+  summarize(Counts=n()) %>%
+  mutate(proportions=Counts/sum(Counts)) %>%
+  arrange(desc(Counts))
+
+```
+
+Also the surveyed group is also overwhlemingly males as seen from the output that ~ **80%** are males
+
+```{r}
+
+```
+
+Now let us go deeper to look at bigger and potentially more insightful trends by looking at some questions specifically. Do note that some data cleaning is required - but I will be concealing the codes. However, note that I will not be using absolute counts as we have to take into account the **number of survey respondents** across the years. As such, I will be dividing the actual counts over the number of survey respondents (yearly) to *normalize* the data.
+
+For a start - let us look at the trends of regular programming languages across time. This will allow us to see which programming languages are gaining strong traction and which are not.
+
+```{r, message=FALSE, warning=FALSE}
+
+#subset programming language regular basis dataset
+survey_data_progreg<-survey_data[,c(1:21)]
+
+colnames(survey_data_progreg)[9:21]<- c("regular_programming_language_python","regular_programming_language_R","regular_programming_language_SQL","regular_programming_language_C",
+                                        "regular_programming_language_C++","regular_programming_language_Java","regular_programming_language_Javascript",
+                                        "regular_programming_language_Julia","regular_programming_language_Swift","regular_programming_loanguage_Bash","regular_programming_language_MATLAB",
+                                        "regular_programming_language_None","regular_programming_language_other")
+
+
+survey_data_progreg<-survey_data_progreg %>%
+  pivot_longer(9:21, names_to="programming_lang_reg", values_to="language")
+
+unique(survey_data_progreg$language)
+
+```
+
+
+## Just for caveats.
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+weird_stuffs<-survey_data %>%
+  filter(For.how.many.years.have.you.used.machine.learning.methods. == "10-20 years") %>%
+  select(What.is.your.age....years.., What.is.your.gender....Selected.Choice, What.is.the.highest.level.of.formal.education.that.you.have.attained.or.plan.to.attain.within.the.next.2.years., 68:78) %>%
+  as.data.frame()
+
+colnames(weird_stuffs)[1:3]<-c("Age","Gender","Highest Education Level")
+
+head(weird_stuffs)
+
+```
+
+Ok, but I supposed that these are very experienced folks, and it could be the case that they are already practicing ML practictioners way before these ML frameworks has even being created
+
+
+## Q7 - Regular programming languages {.tabset}
+
+### Overall
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+#looking at prog lang trend across years
+lang_year<-survey_data_progreg %>%
+  group_by(Year, language) %>%
+  summarize(language_count=n()) %>%
+  filter(language!="") %>%
+  as.data.frame()
+
+#adding in extra column for survey counts across years so we can normalize abit
+lang_year<-lang_year %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 16716,
+                                 Year==2018 ~ 23859,
+                                 Year==2019 ~ 19717,
+                                 Year==2020 ~ 20036,
+                                 Year==2021 ~ 25973))
+
+lang_year<-lang_year %>%
+  mutate(language_count_nor = round(language_count/survey_counts,2))
+
+#Visualizing the plots across programming languages
+p<-lang_year %>%
+  filter(language %in% c("Bash","C", "C++", "Java", "Python", "R", "SQL", "Javascript", "MATLAB")) %>%
+  ggplot(aes(Year, language_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~language,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+```
+
+
+### Data Scientist/Research Scientist
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+lang_year_male<-survey_data_progreg %>%
+  filter(Select.the.title.most.similar.to.your.current.role..or.most.recent.title.if.retired.....Selected.Choice %in% c("Data Scientist", "Research Scientist")) %>%
+  group_by(Year, language) %>%
+  summarize(language_count=n()) %>%
+  filter(language!="") %>%
+  as.data.frame()
+
+
+lang_year_male<-lang_year_male %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 2433,
+                                 Year==2018 ~ 4137,
+                                 Year==2019 ~ 4085,
+                                 Year==2020 ~ 2676,
+                                 Year==2021 ~ 3616))  
+
+lang_year_male<-lang_year_male %>%
+  mutate(language_count_nor = round(language_count/survey_counts,2))
+
+#Visualizing the plots across programming languages
+p<-lang_year_male %>%
+  filter(language %in% c("Bash","C", "C++", "Java", "Python", "R", "SQL", "Javascript", "MATLAB")) %>%
+  ggplot(aes(Year, language_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~language,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+```
+
+
+## {-}
+
+It is obvious from here that R has declined in popularity among the survey respondents..this is nothing surprising given that R has always been more popular with academic researchers and seemingly have some limitations with production level stuffs *(not entirely true though)*. Python and SQL has really shot up in popularity given the explosion of data analytics/data science jobs which normally demands for skillsets in these 2 programming languages.
+
+## Q8 First programming language to recommend {.tabset}
+
+### Overall
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+colnames(survey_data)[22]<-"recommended_first_language_forDS"
+
+#What programming language would you encourage aspiring data scientist learn first?
+first_lang<-survey_data %>%
+  group_by(Year, recommended_first_language_forDS) %>%
+  summarize(language_count=n()) %>%
+  filter(recommended_first_language_forDS != "") %>%
+  as.data.frame()
+
+first_lang<-first_lang %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 16716,
+                                 Year==2018 ~ 23859,
+                                 Year==2019 ~ 19717,
+                                 Year==2020 ~ 20036,
+                                 Year==2021 ~ 25973))
+
+first_lang<-first_lang %>%
+  mutate(language_count_nor = round(language_count/survey_counts,2))
+
+
+p<-first_lang %>%
+  filter(recommended_first_language_forDS %in% c("Java", "SAS","Python","R","C","C/C++/C#","Javascript","SQL", "MATLAB")) %>%
+  ggplot(aes(Year, language_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~recommended_first_language_forDS,nrow=3,scales="free_y")
+
+ggplotly(p)
+```
+
+
+### Male
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+#Now going into gender analysis for Man|Male
+first_lang_male<-survey_data %>%
+  filter(What.is.your.gender....Selected.Choice == "Male") %>%
+  group_by(Year, recommended_first_language_forDS) %>%
+  summarize(language_count=n()) %>%
+  filter(recommended_first_language_forDS != "") %>%
+  as.data.frame()
+
+
+first_lang_male<-first_lang_male %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 13610,
+                                 Year==2018 ~ 19430,
+                                 Year==2019 ~ 16138,
+                                 Year==2020 ~ 15789,
+                                 Year==2021 ~ 20598))  
+
+
+first_lang_male<-first_lang_male %>%
+  mutate(language_count_nor = round(language_count/survey_counts,2))
+
+
+p<-first_lang_male %>%
+  filter(recommended_first_language_forDS %in% c("Java", "SAS","Python","R","C","C/C++/C#","Javascript","SQL", "MATLAB")) %>%
+  ggplot(aes(Year, language_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~recommended_first_language_forDS,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+```
+
+### Female
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+first_lang_female<-survey_data %>%
+  filter(What.is.your.gender....Selected.Choice == "Female") %>%
+  group_by(Year, recommended_first_language_forDS) %>%
+  summarize(language_count=n()) %>%
+  filter(recommended_first_language_forDS != "") %>%
+  as.data.frame()
+
+
+first_lang_female<-first_lang_female %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 2778,
+                                 Year==2018 ~ 4010,
+                                 Year==2019 ~ 3212,
+                                 Year==2020 ~ 3878,
+                                 Year==2021 ~ 4890))  
+
+first_lang_female<-first_lang_female %>%
+  mutate(language_count_nor = round(language_count/survey_counts,2))
+
+
+p<-first_lang_female %>%
+  filter(recommended_first_language_forDS %in% c("Java", "SAS","Python","R","C","C/C++/C#","Javascript","SQL", "MATLAB")) %>%
+  ggplot(aes(Year, language_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~recommended_first_language_forDS,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+```
+
+## {-}
+
+It is very obvious that both Python and R are predominantly the 2 main languages that are recommended to budding new data scientists - though it has to be noted that R is once again on a declining trend. Even SQL is seemingly going to overtake R on popularity.
+
+Just for jokes - SAS is really falling off the cliff...
+
+## Q9 - Regular IDE {.tabset}
+
+### Overall
+
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+survey_data_IDEenv<-survey_data[,c(1:8,23:33)]
+
+colnames(survey_data_IDEenv)[9:19]<-c("regular_IDE_Jupyter", "regular_IDE_Rstudio","regular_IDE_VScode","regular_IDE_Pycharm","regular_IDE_Spyder",
+                                      "regular_IDE_notepad++", "regular_IDE_sublimetext","regular_IDE_Vim","regular_IDE_MATLAB",
+                                      "regular_IDE_None","regular_IDE_Other")
+
+survey_data_IDEenv<-survey_data_IDEenv %>%
+  pivot_longer(9:19, names_to="programming_IDE", values_to="IDEs")
+
+#Sadly I have to do some form of recoding first because the data is really quite dirty
+survey_data_IDEenv<-survey_data_IDEenv %>%
+  mutate(IDEs=recode(IDEs,"Jupyter (JupyterLab, Jupyter Notebooks, etc) " = "Jupyter/IPython", "Visual Studio" = "Visual Studio/ Visual Studio Code", 
+                     " Visual Studio / Visual Studio Code " = "Visual Studio/ Visual Studio Code", "  Spyder  " = "Spyder", "  Sublime Text  " = "Sublime Text",
+                     "  Vim / Emacs  "  = "Vim", " MATLAB "  = "MATLAB", " PyCharm " = "PyCharm" , " RStudio "  = "RStudio" , "  Notepad++  " = "Notepad++"))
+  
+
+
+#looking at prog lang trend across years
+IDE_year<-survey_data_IDEenv %>%
+  group_by(Year, IDEs) %>%
+  summarize(IDEs_count=n()) %>%
+  filter(IDEs!="") %>%
+  as.data.frame()
+
+
+#adding in extra column for survey counts across years so we can normalize abit
+IDE_year<-IDE_year %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 16716,
+                                 Year==2018 ~ 23859,
+                                 Year==2019 ~ 19717,
+                                 Year==2020 ~ 20036,
+                                 Year==2021 ~ 25973))
+
+IDE_year<-IDE_year %>%
+  mutate(IDEs_count_nor = round(IDEs_count/survey_counts,2))
+
+#Visualizing the plots across IDEs
+
+p<-IDE_year %>%
+  filter(IDEs %in% c("Jupyter/IPython", "MATLAB","Notepad++","PyCharm","RStudio","Spyder","Sublime Text","Vim","Visual Studio/ Visual Studio Code")) %>%
+  ggplot(aes(Year, IDEs_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~IDEs,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+```
+
+
+### Male
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+IDE_year_male<-survey_data_IDEenv %>%
+  filter(What.is.your.gender....Selected.Choice == "Male") %>%
+  group_by(Year, IDEs) %>%
+  summarize(IDEs_count=n()) %>%
+  filter(IDEs!="") %>%
+  as.data.frame()
+
+
+IDE_year_male<-IDE_year_male %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 13610,
+                                 Year==2018 ~ 19430,
+                                 Year==2019 ~ 16138,
+                                 Year==2020 ~ 15789,
+                                 Year==2021 ~ 20598))  
+
+#normalizing the male counts by dividing my total male respondents
+IDE_year_male<-IDE_year_male %>%
+  mutate(IDEs_count_nor = round(IDEs_count/survey_counts,2))
+
+
+#Visualizing the plots
+p<-IDE_year_male %>%
+  filter(IDEs %in% c("Jupyter/IPython", "MATLAB","Notepad++","PyCharm","RStudio","Spyder","Sublime Text","Vim","Visual Studio/ Visual Studio Code")) %>%
+  ggplot(aes(Year, IDEs_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~IDEs,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+
+
+```
+
+
+### Female
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+IDE_year_female<-survey_data_IDEenv %>%
+  filter(What.is.your.gender....Selected.Choice == "Female") %>%
+  group_by(Year, IDEs) %>%
+  summarize(IDEs_count=n()) %>%
+  filter(IDEs!="") %>%
+  as.data.frame()
+
+
+IDE_year_female<-IDE_year_female %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 2778,
+                                 Year==2018 ~ 4010,
+                                 Year==2019 ~ 3212,
+                                 Year==2020 ~ 3878,
+                                 Year==2021 ~ 4890))  
+
+IDE_year_female<-IDE_year_female %>%
+  mutate(IDEs_count_nor = round(IDEs_count/survey_counts,2))
+
+
+#Visualizing the plots
+p<-IDE_year_female %>%
+  filter(IDEs %in% c("Jupyter/IPython", "MATLAB","Notepad++","PyCharm","RStudio","Spyder","Sublime Text","Vim","Visual Studio/ Visual Studio Code")) %>%
+  ggplot(aes(Year, IDEs_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~IDEs,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+
+```
+
+## {-}
+
+As you can observe, jupyter products were the most popular IDEs for data science initially. The ease of use and the interactivity of the notebooks makes it easy and appealing for rapid prototyping of any analysis. However, its appeal is declining as both pycharm and VS code have ramped up their developments and is becoming more appealing to data scientists as a complete integrated IDE platform for DS work. Spyder used to be rather popular initially but it has failed to evolve beyond that of scientific IDE, and this might have caused it to lose it edge over more integrated general purpose IDEs such as Pycharm and VS code.
+
+
+## Q16 - ML Frameworks used regularly {.tabset}
+
+### Overall
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+#Analyzing ML framework across time
+survey_data_ML_framework<-survey_data[,c(1:8,68:83)]
+
+survey_data_ML_framework<-survey_data_ML_framework %>%
+  pivot_longer(9:24, names_to="ML_Frameworks", values_to="package")
+
+unique(survey_data_ML_framework$package)
+
+survey_data_ML_framework<-survey_data_ML_framework %>%
+  mutate(package=recode(package,"  Scikit-learn " = "Scikit-Learn", "  TensorFlow " = "TensorFlow", " Caret " = "Caret",
+                        " Keras " = "Keras", " PyTorch " = "PyTorch", " LightGBM " = "lightgbm", " Fast.ai " = "Fastai", " Xgboost " = "Xgboost"))
+
+#looking at prog lang trend across years
+MLframework_year<-survey_data_ML_framework %>%
+  group_by(Year, package) %>%
+  summarize(package_count=n()) %>%
+  filter(package!="") %>%
+  as.data.frame()
+
+#adding in extra column for survey counts across years so we can normalize abit
+MLframework_year<-MLframework_year %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 16716,
+                                 Year==2018 ~ 23859,
+                                 Year==2019 ~ 19717,
+                                 Year==2020 ~ 20036,
+                                 Year==2021 ~ 25973))
+
+MLframework_year<-MLframework_year %>%
+  mutate(package_count_nor = round(package_count/survey_counts,2))
+
+
+#Analyzing it graphically
+p<-MLframework_year %>%
+  filter(package %in% c("Keras","TensorFlow","PyTorch","Fastai","Caret", "Xgboost", " Tidymodels ", " H2O 3 ")) %>%
+  ggplot(aes(Year, package_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~package,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+```
+
+### Data Scientist/Research Scientist
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+#Filter for ML framework MALE
+
+MLframework_male_year<-survey_data_ML_framework %>%
+  filter(Select.the.title.most.similar.to.your.current.role..or.most.recent.title.if.retired.....Selected.Choice %in% c("Data Scientist", "Research Scientist")) %>%
+  group_by(Year, package) %>%
+  summarize(package_count=n()) %>%
+  filter(package!="") %>%
+  as.data.frame()
+
+
+MLframework_male_year<-MLframework_male_year %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 2433,
+                                 Year==2018 ~ 4137,
+                                 Year==2019 ~ 4085,
+                                 Year==2020 ~ 2676,
+                                 Year==2021 ~ 3616))  
+
+#normalizing the male counts by dividing my total male respondents
+MLframework_male_year<-MLframework_male_year %>%
+  mutate(package_count_nor = round(package_count/survey_counts,2))
+
+
+#Analyzing it graphically!
+p<-MLframework_male_year %>%
+  filter(package %in% c("Keras","TensorFlow","PyTorch","Fastai","Caret", "Xgboost", " Tidymodels ", " H2O 3 ")) %>%
+  ggplot(aes(Year, package_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~package,nrow=3,scales="free_y")
+
+
+ggplotly(p)
+
+
+```
+
+
+## {-}
+
+First thing first - caret is becoming obsolete as Max Kuhn (author of caret package) has moved on to R studio and begun work extensively on tidymodels. We do not have enough data points in recent year to show this, but I believe tidymodels should be gaining a strong traction.
+
+Keras should still remain stable as it is, as it is the to **go to** framework when data scientists want to prototype a deep learning model quickly and it is one of simplest deep learning framework to learn. I also see pytorch gaining traction in recent years and this is nothing surprising as its adoption has grown across academia to the ML practising industry.
+
+## ML Algorithms used regularly {.tabset}
+
+### Overall
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+#ML Algo do you use across time?
+survey_data_ML_algo<-survey_data[,c(1:8,84:95)]
+
+
+survey_data_ML_algo<-survey_data_ML_algo %>%
+  pivot_longer(9:20, names_to="ML_algos", values_to="ML_Algorithms")
+
+survey_data_ML_algo<-survey_data_ML_algo %>%
+  mutate(ML_Algorithms=recode(ML_Algorithms,"Transformer Networks (BERT, gpt-2, etc)" = "Transformer Networks (BERT, gpt-3, etc)"))
+
+
+#looking at ML algo trend across years
+MLalgo_year<-survey_data_ML_algo %>%
+  group_by(Year, ML_Algorithms) %>%
+  summarize(MLalgo_count=n()) %>%
+  filter(ML_Algorithms!="") %>%
+  as.data.frame()
+
+
+#adding in extra column for survey counts across years so we can normalize abit
+MLalgo_year<-MLalgo_year %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 16716,
+                                 Year==2018 ~ 23859,
+                                 Year==2019 ~ 19717,
+                                 Year==2020 ~ 20036,
+                                 Year==2021 ~ 25973))
+
+MLalgo_year<-MLalgo_year %>%
+  mutate(MLalgo_count_nor = round(MLalgo_count/survey_counts,2))
+
+
+#Analyzing it graphically
+p<-MLalgo_year %>%
+  filter(ML_Algorithms %in% c("Bayesian Approaches","Convolutional Neural Networks","Decision Trees or Random Forests","Dense Neural Networks (MLPs, etc)",
+                              "Generative Adversarial Networks", "Gradient Boosting Machines (xgboost, lightgbm, etc)","Linear or Logistic Regression", "Recurrent Neural Networks", "Transformer Networks (BERT, gpt-3, etc)")) %>%
+  ggplot(aes(Year, MLalgo_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~ML_Algorithms,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+
+
+
+```
+
+
+### Data Scientists/Research Scientists
+
+```{r, message=FALSE, warning=FALSE, fig.width=8}
+
+### Analysis for ML algo across time (FOR MALES)
+#looking at ML algo trend across years
+MLalgo_male_year<-survey_data_ML_algo %>%
+  filter(Select.the.title.most.similar.to.your.current.role..or.most.recent.title.if.retired.....Selected.Choice %in% c("Data Scientist", "Research Scientist")) %>%
+  group_by(Year, ML_Algorithms) %>%
+  summarize(MLalgo_count=n()) %>%
+  filter(ML_Algorithms!="") %>%
+  as.data.frame()
+
+
+#adding in extra column for survey counts across years so we can normalize abit
+MLalgo_male_year<-MLalgo_male_year %>%
+  mutate(survey_counts=case_when(Year==2017 ~ 2433,
+                                 Year==2018 ~ 4137,
+                                 Year==2019 ~ 4085,
+                                 Year==2020 ~ 2676,
+                                 Year==2021 ~ 3616))
+
+MLalgo_male_year<-MLalgo_male_year %>%
+  mutate(MLalgo_count_nor = round(MLalgo_count/survey_counts,2))
+
+
+#Analyzing it graphically
+p<-MLalgo_male_year %>%
+  filter(ML_Algorithms %in% c("Bayesian Approaches","Convolutional Neural Networks","Decision Trees or Random Forests","Dense Neural Networks (MLPs, etc)",
+                              "Generative Adversarial Networks", "Gradient Boosting Machines (xgboost, lightgbm, etc)","Linear or Logistic Regression", "Recurrent Neural Networks", "Transformer Networks (BERT, gpt-3, etc)")) %>%
+  ggplot(aes(Year, MLalgo_count_nor)) + geom_line(color="blue") + geom_point(color="blue") +
+  facet_wrap(~ML_Algorithms,nrow=3,scales="free_y")
+
+ggplotly(p)
+
+
+```
+
+
+## {-}
+
+It is clear from the diagram below that linear/logistic regression and random forest are still among the most commonly used algorithms. The truth is that - these models are easy to comprehend and to present to business stakeholders. More importantly, these models work just fine as compared to sophisicated models, and more often than not, these are just what companies need. Boosting machines are still fairly popular, as they are working well in production settings and they are also straight forward to implement.
+
+One interesting to note is that transformer networks (BERT GPT3) have gained quite a fair bit of traction in recent years. Given that the data is truncated, but I am pretty sure that this trend will continue to stay in the recent years to come!.
+
